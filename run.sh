@@ -5,6 +5,7 @@ SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 
 MODE="${MODE:-proxy}"
 PAC_URL="${PAC_URL:-http://127.0.0.1/proxy.pac}"
+ADDRESS="${ADDRESS:-0.0.0.0}"
 FORCE_HOST="${FORCE_HOST:-36.248.75.39}"
 PORTS="${PORTS:-80:443}"
 ACTIVE_ONLY="${ACTIVE_ONLY:-1}"
@@ -29,6 +30,7 @@ usage() {
 
 环境变量:
   FORCE_HOST=36.248.75.39
+  ADDRESS=0.0.0.0
   PORTS=80:443
   PAC_URL=http://127.0.0.1/proxy.pac
   ACTIVE_ONLY=1
@@ -238,6 +240,7 @@ print_diag() {
   echo "==> 诊断"
   echo "MODE=$MODE"
   echo "PAC_URL=$PAC_URL"
+  echo "ADDRESS=$ADDRESS"
   echo "FORCE_HOST=$FORCE_HOST"
   echo "SERVICES:"
   echo "$services" | sed 's/^/  /'
@@ -286,6 +289,7 @@ cleanup() {
 
 echo "MODE=$MODE"
 echo "PAC_URL=$PAC_URL"
+echo "ADDRESS=$ADDRESS"
 echo "FORCE_HOST=$FORCE_HOST"
 echo
 
@@ -305,10 +309,10 @@ if [ "$MODE" = "hosts" ]; then
 fi
 
 echo
-echo "==> 启动 UNM: sudo node app.js -p $PORTS -f $FORCE_HOST"
+echo "==> 启动 UNM: sudo node app.js -a $ADDRESS -p $PORTS -f $FORCE_HOST"
 (
   cd "$SCRIPT_DIR"
-  sudo node app.js -p "$PORTS" -f "$FORCE_HOST"
+  sudo node app.js -a "$ADDRESS" -p "$PORTS" -f "$FORCE_HOST"
 ) &
 SERVER_PID="$!"
 
