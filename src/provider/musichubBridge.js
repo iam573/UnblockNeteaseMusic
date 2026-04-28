@@ -5,6 +5,7 @@ const providers = {
 	KugouMusicClient:    require('./kugou'),
 	KuwoMusicClient:     require('./kuwo'),
 	MiguMusicClient:     require('./migu'),
+	PyncmdMusicClient:   require('./pyncmd'),
 	// aggregators
 	TuneHubMusicClient:  require('./tunehub'),
 	JBSouMusicClient:    require('./jbsou'),

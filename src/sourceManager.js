@@ -10,6 +10,7 @@ const catalog = [
 	{id: 'KugouMusicClient',   label: '酷狗音乐',   category: 'china', key: 'KugouMusicClient',   defaultEnabled: true},
 	{id: 'KuwoMusicClient',    label: '酷我音乐',   category: 'china', key: 'KuwoMusicClient',    defaultEnabled: true},
 	{id: 'MiguMusicClient',    label: '咪咕音乐',   category: 'china', key: 'MiguMusicClient',    defaultEnabled: true},
+	{id: 'PyncmdMusicClient',  label: 'Pyncmd 聚合', category: 'aggregator', key: 'PyncmdMusicClient', defaultEnabled: true},
 	// aggregators
 	{id: 'TuneHubMusicClient', label: 'TuneHub', category: 'aggregator', key: 'TuneHubMusicClient', defaultEnabled: true},
 	{id: 'JBSouMusicClient',   label: 'JBSou',   category: 'aggregator', key: 'JBSouMusicClient',   defaultEnabled: true},
@@ -24,6 +25,7 @@ const legacyAlias = {
 	kugou: 'KugouMusicClient',
 	kuwo: 'KuwoMusicClient',
 	migu: 'MiguMusicClient',
+	pyncmd: 'PyncmdMusicClient',
 	jbsou: 'JBSouMusicClient',
 	tunehub: 'TuneHubMusicClient',
 }

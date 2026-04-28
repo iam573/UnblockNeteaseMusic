@@ -4,19 +4,15 @@
     "KugouMusicClient": false,
     "KuwoMusicClient": true,
     "MiguMusicClient": true,
-    "FiveSingMusicClient": false,
-    "YouTubeMusicClient": false,
-    "JooxMusicClient": false,
+    "PyncmdMusicClient": true,
     "TuneHubMusicClient": true,
     "JBSouMusicClient": true
   },
   "order": [
     "KugouMusicClient",
-    "FiveSingMusicClient",
-    "JooxMusicClient",
+    "PyncmdMusicClient",
     "JBSouMusicClient",
     "MiguMusicClient",
-    "YouTubeMusicClient",
     "TuneHubMusicClient",
     "QQMusicClient",
     "KuwoMusicClient"
