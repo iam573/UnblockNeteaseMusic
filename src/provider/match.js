@@ -13,6 +13,12 @@ const provider = sourceManager.catalog.reduce((result, item) => Object.assign(re
 
 const fmt = bytes => bytes > 0 ? `${(bytes / 1048576).toFixed(2)}MB` : '?'
 const pad = (s, n) => String(s).padEnd(n)
+const RACE_GRACE_MS = 1200
+const LOW_TRUST_SOURCES = new Set([
+	'FiveSingMusicClient',
+	'YouTubeMusicClient',
+	'JooxMusicClient'
+])
 
 // Estimate actual audio duration (seconds) from file size + detected bitrate.
 // Returns null when bitrate is unknown (can't reliably estimate).
@@ -39,11 +45,52 @@ const isTrial = (song, expectedMs) => {
 	return false
 }
 
-// race: resolve with the first source that returns a valid playable URL.
-// Results are stored in pre-allocated slots (indexed by candidate position)
-// so the caller can always print them in the original order.
+const sourceScore = (name, song, idx, total) => {
+	let score = 0
+	const br = parseInt(song && song.br) || 0
+	const size = parseInt(song && song.size) || 0
+
+	// Prefer higher audio quality when multiple sources are valid.
+	if (br >= 999000) score += 6
+	else if (br >= 320000) score += 5
+	else if (br >= 192000) score += 4
+	else if (br >= 128000) score += 3
+	else if (br > 0) score += 1
+
+	// File size is a weak secondary signal.
+	if (size > 0) score += Math.min(2, Math.log2(size / (1024 * 1024) + 1))
+
+	// Respect configured source order as a tie-breaker.
+	score += ((total - idx) / total) * 1.2
+
+	// Low-trust sources can still win, but need better quality to do so.
+	if (LOW_TRUST_SOURCES.has(name)) score -= 1.2
+
+	return score
+}
+
+// race with quality-aware selection:
+// - start all providers in parallel
+// - after first success, wait a short grace window for better candidates
+// - choose the highest-scored success
 const raceCheck = (candidates, info, slots) => new Promise((resolve, reject) => {
 	let remaining = candidates.length
+	const success = []
+	let finished = false
+	let graceTimer = null
+
+	const finalize = () => {
+		if (finished) return
+		finished = true
+		if (graceTimer) clearTimeout(graceTimer)
+		if (!success.length) return reject()
+
+		const best = success
+			.map(item => Object.assign(item, {score: sourceScore(item.source, item.song, item.idx, candidates.length)}))
+			.sort((a, b) => b.score - a.score)[0]
+		resolve(best)
+	}
+
 	if (!remaining) return reject()
 	candidates.forEach((name, idx) => {
 		provider[name].check(info)
@@ -65,11 +112,16 @@ const raceCheck = (candidates, info, slots) => new Promise((resolve, reject) => 
 				return Promise.reject()
 			}
 			slots[idx] = {state: 'ok', url: song.url, size: song.size, br: song.br}
-			resolve({song, source: name, idx})
+			success.push({song, source: name, idx})
+			if (!graceTimer) {
+				graceTimer = setTimeout(finalize, RACE_GRACE_MS)
+			}
 		})
 		.catch(() => {
 			if (!slots[idx]) slots[idx] = {state: 'failed'}
-			if (--remaining === 0) reject()
+		})
+		.finally(() => {
+			if (--remaining === 0) finalize()
 		})
 	})
 })

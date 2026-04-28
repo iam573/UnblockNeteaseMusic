@@ -6,15 +6,10 @@ const CONFIG_PATH = path.join(__dirname, '..', 'source-config.json')
 
 const catalog = [
 	// china — native implementations available
-	{id: 'NeteaseMusicClient', label: '网易云音乐', category: 'china', key: 'NeteaseMusicClient', defaultEnabled: true},
 	{id: 'QQMusicClient',      label: 'QQ 音乐',   category: 'china', key: 'QQMusicClient',      defaultEnabled: true},
 	{id: 'KugouMusicClient',   label: '酷狗音乐',   category: 'china', key: 'KugouMusicClient',   defaultEnabled: true},
 	{id: 'KuwoMusicClient',    label: '酷我音乐',   category: 'china', key: 'KuwoMusicClient',    defaultEnabled: true},
 	{id: 'MiguMusicClient',    label: '咪咕音乐',   category: 'china', key: 'MiguMusicClient',    defaultEnabled: true},
-	{id: 'FiveSingMusicClient',label: '5SING 原创', category: 'china', key: 'FiveSingMusicClient',defaultEnabled: false},
-	// global — native implementations available
-	{id: 'YouTubeMusicClient', label: 'YouTube Music', category: 'global', key: 'YouTubeMusicClient', defaultEnabled: false},
-	{id: 'JooxMusicClient',    label: 'JOOX',          category: 'global', key: 'JooxMusicClient',    defaultEnabled: false},
 	// aggregators
 	{id: 'TuneHubMusicClient', label: 'TuneHub', category: 'aggregator', key: 'TuneHubMusicClient', defaultEnabled: true},
 	{id: 'JBSouMusicClient',   label: 'JBSou',   category: 'aggregator', key: 'JBSouMusicClient',   defaultEnabled: true},
@@ -29,9 +24,6 @@ const legacyAlias = {
 	kugou: 'KugouMusicClient',
 	kuwo: 'KuwoMusicClient',
 	migu: 'MiguMusicClient',
-	netease: 'NeteaseMusicClient',
-	joox: 'JooxMusicClient',
-	youtube: 'YouTubeMusicClient',
 	jbsou: 'JBSouMusicClient',
 	tunehub: 'TuneHubMusicClient',
 }

@@ -5,11 +5,6 @@ const providers = {
 	KugouMusicClient:    require('./kugou'),
 	KuwoMusicClient:     require('./kuwo'),
 	MiguMusicClient:     require('./migu'),
-	// other chinese
-	FiveSingMusicClient: require('./fivesing'),
-	// international
-	YouTubeMusicClient:  require('./youtube'),
-	JooxMusicClient:     require('./joox'),
 	// aggregators
 	TuneHubMusicClient:  require('./tunehub'),
 	JBSouMusicClient:    require('./jbsou'),
