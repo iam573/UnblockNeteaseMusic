@@ -67,7 +67,9 @@ hook.target.path = new Set([
 	'/api/v1/play/record',
 	'/api/playlist/v4/detail',
 	'/api/v1/radio/get',
-	'/api/v1/discovery/recommend/songs'
+	'/api/v1/discovery/recommend/songs',
+	'/api/mac/upgrade/get',
+	'/api/osx/version'
 ])
 
 const domainList = [
@@ -176,7 +178,21 @@ hook.request.after = ctx => {
 			}
 			console.log('[UNM] parsed:', netease.path, 'mode:', netease.parseMode, 'code:', netease.jsonBody.code, 'data:', Array.isArray(netease.jsonBody.data) ? netease.jsonBody.data.length : typeof(netease.jsonBody.data))
 
-			if (new Set([401, 512]).has(netease.jsonBody.code) && !netease.web) {
+			if (netease.path == '/api/mac/upgrade/get' || netease.path == '/api/osx/version') {
+				netease.jsonBody = Object.assign({}, netease.jsonBody, {
+					code: 200,
+					data: null,
+					update: false,
+					upgrade: false,
+					hasUpdate: false,
+					needUpdate: false,
+					forceUpdate: false,
+					version: null,
+					url: null
+				})
+				console.log('[UNM] blocked update:', netease.path)
+			}
+			else if (new Set([401, 512]).has(netease.jsonBody.code) && !netease.web) {
 				if (netease.path.includes('manipulate')) return tryCollect(ctx)
 				else if (netease.path == '/api/song/like') return tryLike(ctx)
 			}
