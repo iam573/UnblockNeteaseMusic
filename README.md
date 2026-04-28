@@ -6,27 +6,80 @@
 
 ## 特性
 
-- 使用 QQ / 虾米 / 百度 / 酷狗 / 酷我 / 咪咕 / JOOX 音源替换变灰歌曲链接 (默认仅启用一、五、六)
+- 使用 QQ / 酷狗 / 酷我 / 咪咕 / TuneHub / JBSou / Pyncmd 聚合音源替换变灰歌曲链接（可在控制台动态启停与排序）
 - 为请求增加 `X-Real-IP` 参数解锁海外限制，支持指定网易云服务器 IP，支持设置上游 HTTP / HTTPS 代理
 - 完整的流量代理功能 (HTTP / HTTPS)，可直接作为系统代理 (同时支持 PAC)
+- 匹配阶段支持歌名 + 歌手 + 时长综合评分，并在短窗口内择优返回更高质量候选链接
+- 提供内置音源控制台 `http://<Server>/console`，支持健康检查、拖拽排序、启停音源，配置持久化到 `source-config.json`
+- 附带 macOS 启动脚本 `run.sh`，可一键切换 `proxy` / `pac` / `hosts` 三种模式并自动恢复网络设置
 
 ## 运行
 
-使用 npx
+> 这是一个基于上游修改的 fork。若要使用本仓库里的最新实现，建议直接运行当前源码，不要使用上游 `npx` 包或公开镜像。
 
-```
-$ npx @nondanee/unblockneteasemusic
-```
+### 方式 1. 直接运行当前仓库
 
-或使用 Docker
+本项目当前无额外 npm 依赖，克隆后可直接启动：
 
-```
-$ docker run nondanee/unblockneteasemusic
+```bash
+node app.js -a 0.0.0.0 -p 8080:8081
 ```
 
+如果要按 hosts 方式接管网易云域名，通常需要监听 80/443：
+
+```bash
+sudo node app.js -a 0.0.0.0 -p 80:443 -f <网易云服务器 IP>
 ```
-$ docker-compose up
+
+### 方式 2. 使用 macOS 辅助脚本
+
+`run.sh` 会自动：
+
+- 启动 `node app.js`
+- 按模式设置系统代理 / PAC / hosts
+- 在退出时恢复网络设置
+- 检查证书信任状态
+
+> 当前仅在 macOS 上验证过 `proxy` 模式可以生效；`pac` 和 `hosts` 模式暂未跑通，先不要作为可用方案。
+
+常用示例：
+
+```bash
+./run.sh --mode proxy
 ```
+
+> 当前推荐只使用这一种模式。
+
+```bash
+./run.sh --mode pac
+```
+
+```bash
+./run.sh --mode hosts
+```
+
+可用环境变量：
+
+```bash
+FORCE_HOST=36.248.75.39
+ADDRESS=0.0.0.0
+PORTS=80:443
+PAC_URL=http://127.0.0.1/proxy.pac
+ACTIVE_ONLY=1
+TRUST_CA=0
+```
+
+### 方式 3. 本地构建 Docker 镜像
+
+```bash
+docker build -t unblockneteasemusic:local .
+```
+
+```bash
+docker run --rm -p 8080:8080 unblockneteasemusic:local
+```
+
+> 仓库内现有 `docker-compose.yml` 仍是上游镜像示例，如需验证 fork 修改，优先使用本地构建镜像。
 
 ### 配置参数
 
@@ -50,6 +103,30 @@ optional arguments:
   -h, --help                      output usage information
 ```
 
+### 控制台
+
+服务启动后可访问：
+
+- `http://<Server>:<PORT>/console`
+- `http://<Server>:<PORT>/__unm/sources`
+
+控制台支持：
+
+- 查看当前音源启用状态与优先级
+- 拖拽调整匹配顺序
+- 在线启停音源并保存到 `source-config.json`
+- 对所有音源执行连通性健康检查
+
+当前 fork 更推荐通过控制台或直接编辑 `source-config.json` 管理音源顺序与启停状态。
+
+如需自行接入前端或脚本，可使用以下接口：
+
+```text
+GET  /__unm/api/sources
+POST /__unm/api/sources/save
+GET  /__unm/api/sources/health?keyword=周杰伦
+```
+
 ## 使用
 
 **警告：本项目不提供线上 demo，请不要轻易信任使用他人提供的公开代理服务，以免发生安全问题**
@@ -68,11 +145,12 @@ checknetisolation loopbackexempt -a -n="1F8B0F94.122165AE053F_j2p0p5q0044a6"
 
 ### 方法 1. 修改 hosts
 
-向 hosts 文件添加两条规则
+向 hosts 文件添加三条规则
 
 ```
 <Server IP> music.163.com
 <Server IP> interface.music.163.com
+<Server IP> interface3.music.163.com
 ```
 
 > 使用此方法必须监听 80 端口 `-p 80` 
@@ -86,6 +164,10 @@ checknetisolation loopbackexempt -a -n="1F8B0F94.122165AE053F_j2p0p5q0044a6"
 PAC 自动代理脚本地址 `http://<Server Name:PORT>/proxy.pac`
 
 全局代理地址填写服务器地址和端口号即可
+
+如果使用了本 fork 的控制台，可在同一地址访问 `http://<Server Name:PORT>/console` 查看和调整当前音源配置。
+
+若你当前运行环境是 macOS，按现阶段测试结果，只有显式代理（`proxy` 模式）可用。
 
 | 平台    | 基础设置 |
 | :------ | :------------------------------- |
@@ -118,11 +200,34 @@ global.hosts = {'i.y.qq.com': '59.37.96.220'}
 /**
  * Find matching song from other platforms
  * @param {Number} id netease song id
- * @param {Array<String>||undefined} source support qq, xiami, baidu, kugou, kuwo, migu, joox
+ * @param {Array<String>||undefined} source support qq, kugou, kuwo, migu, tunehub, jbsou, pyncmd
  * @return {Promise<Object>}
  */
 match(418602084, ['qq', 'kuwo', 'migu']).then(console.log)
 ```
+
+### Pyncmd 聚合 API
+
+当前默认使用：
+
+```
+https://music-api.gdstudio.xyz/api.php
+```
+
+可通过环境变量覆盖：
+
+```
+PYNCMD_API="https://your-mirror/api.php" ./run.sh --mode proxy
+```
+
+### 音源配置文件
+
+控制台保存后的状态会写入仓库根目录的 `source-config.json`，包含两部分：
+
+- `enabled`: 每个音源是否启用
+- `order`: 音源匹配优先级
+
+服务重启后会继续使用该配置；如果文件不存在，则回退到内置默认顺序。
 
 ## 效果
 
