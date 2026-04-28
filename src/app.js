@@ -74,7 +74,7 @@ const dns = host => new Promise((resolve, reject) => require('dns').lookup(host,
 const httpdns = host => require('./request')('POST', 'http://music.httpdns.c.163.com/d', {}, host).then(response => response.json()).then(jsonBody => jsonBody.dns.reduce((result, domain) => result.concat(domain.ips), []))
 const httpdns2 = host => require('./request')('GET', 'http://httpdns.n.netease.com/httpdns/v2/d?domain=' + host).then(response => response.json()).then(jsonBody => Object.keys(jsonBody.data).map(key => jsonBody.data[key]).reduce((result, value) => result.concat(value.ip || []), []))
 
-Promise.all([httpdns, httpdns2].map(query => query(target.join(','))).concat(target.map(dns)))
+Promise.all([httpdns, httpdns2].map(query => query(target.join(',')).catch(() => [])).concat(target.map(dns)))
 .then(result => {
 	const {host} = hook.target
 	result.forEach(array => array.forEach(host.add, host))

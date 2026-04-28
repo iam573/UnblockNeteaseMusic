@@ -1,0 +1,652 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>UNM Source Center</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+    :root {
+      --bg: #080e1a;
+      --surface: rgba(255,255,255,0.035);
+      --surface-hover: rgba(255,255,255,0.06);
+      --border: rgba(255,255,255,0.08);
+      --border-bright: rgba(255,255,255,0.14);
+      --text: #e8edf6;
+      --text-sub: rgba(255,255,255,0.45);
+      --text-muted: rgba(255,255,255,0.25);
+      --brand: #5b8dee;
+      --brand-glow: rgba(91,141,238,0.35);
+      --ok: #34d399;
+      --ok-bg: rgba(52,211,153,0.1);
+      --ok-border: rgba(52,211,153,0.28);
+      --bad: #f87171;
+      --bad-bg: rgba(248,113,113,0.1);
+      --bad-border: rgba(248,113,113,0.28);
+      --na: rgba(255,255,255,0.3);
+      --na-bg: rgba(255,255,255,0.04);
+      --na-border: rgba(255,255,255,0.1);
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background:
+        radial-gradient(ellipse 900px 600px at 15% -5%, rgba(91,141,238,0.18) 0%, transparent 70%),
+        radial-gradient(ellipse 600px 500px at 85% 5%, rgba(52,211,153,0.10) 0%, transparent 65%),
+        radial-gradient(ellipse 500px 400px at 60% 85%, rgba(139,92,246,0.08) 0%, transparent 65%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .root {
+      position: relative;
+      z-index: 1;
+      max-width: 1120px;
+      margin: 0 auto;
+      padding: 32px 24px 64px;
+    }
+
+    /* ── top nav ─────────────────────────────────────────────────── */
+    .nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 28px;
+    }
+    .nav-logo { display: flex; align-items: center; gap: 10px; }
+    .nav-icon {
+      width: 34px; height: 34px;
+      background: linear-gradient(135deg, #5b8dee, #3b6fd4);
+      border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 16px;
+      box-shadow: 0 0 16px var(--brand-glow);
+    }
+    .nav-title { font-size: 16px; font-weight: 700; letter-spacing: -0.3px; }
+    .nav-sub { font-size: 12px; color: var(--text-sub); }
+
+    /* probe status (right side of nav) */
+    .probe-status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      color: var(--text-sub);
+    }
+    .probe-dot {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: var(--na);
+    }
+    .probe-dot.probing {
+      background: var(--brand);
+      box-shadow: 0 0 6px var(--brand-glow);
+      animation: pulse 1.2s ease-in-out infinite;
+    }
+    .probe-dot.done { background: var(--ok); box-shadow: 0 0 5px var(--ok); }
+    .btn-recheck {
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text-sub);
+      font-family: inherit;
+      font-size: 12px;
+      font-weight: 500;
+      padding: 5px 10px;
+      cursor: pointer;
+      transition: border-color 0.15s, color 0.15s;
+    }
+    .btn-recheck:hover { border-color: var(--border-bright); color: var(--text); }
+    .btn-recheck:disabled { pointer-events: none; opacity: 0.4; }
+
+    /* ── filter tabs + search row ────────────────────────────────── */
+    .toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+
+    .tabs {
+      display: flex;
+      gap: 4px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 4px;
+    }
+    .tab {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      border: none;
+      border-radius: 8px;
+      background: transparent;
+      color: var(--text-sub);
+      font-family: inherit;
+      font-size: 13px;
+      font-weight: 500;
+      padding: 7px 14px;
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s;
+      white-space: nowrap;
+    }
+    .tab:hover { background: var(--surface-hover); color: var(--text); }
+    .tab.active {
+      background: rgba(255,255,255,0.09);
+      color: var(--text);
+      font-weight: 600;
+    }
+    .tab .tab-count {
+      font-size: 11px;
+      font-weight: 700;
+      padding: 1px 6px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.08);
+    }
+    .tab.active .tab-count { background: rgba(255,255,255,0.13); }
+    .tab-all    .tab-count { }
+    .tab-enabled .tab-count { color: var(--brand); }
+    .tab-healthy .tab-count { color: var(--ok); }
+
+    .search-wrap {
+      position: relative;
+      flex: 1;
+      max-width: 280px;
+    }
+    .search-wrap svg {
+      position: absolute; left: 10px; top: 50%;
+      transform: translateY(-50%);
+      opacity: 0.3; pointer-events: none;
+    }
+    .search-wrap input {
+      width: 100%;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      color: var(--text);
+      font-family: inherit;
+      font-size: 13px;
+      padding: 8px 10px 8px 32px;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    .search-wrap input::placeholder { color: var(--text-muted); }
+    .search-wrap input:focus { border-color: var(--border-bright); }
+
+    /* ── progress bar ────────────────────────────────────────────── */
+    .progress-bar {
+      height: 2px;
+      background: var(--border);
+      border-radius: 2px;
+      margin-bottom: 16px;
+      overflow: hidden;
+      opacity: 0;
+      transition: opacity 0.2s;
+    }
+    .progress-bar.active { opacity: 1; }
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #5b8dee, #34d399);
+      border-radius: 2px;
+      transition: width 0.5s ease;
+      width: 0%;
+    }
+
+    /* ── flat list ───────────────────────────────────────────────── */
+    .source-list {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      overflow: hidden;
+    }
+    .source-list-inner { padding: 8px; display: flex; flex-direction: column; gap: 4px; }
+
+    .divider {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 6px 4px;
+      color: var(--text-muted);
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.6px;
+      text-transform: uppercase;
+    }
+    .divider::before, .divider::after {
+      content: ''; flex: 1; height: 1px; background: var(--border);
+    }
+
+    /* ── source rows ─────────────────────────────────────────────── */
+    .source-row {
+      display: grid;
+      grid-template-columns: 20px 1fr auto auto;
+      gap: 12px;
+      align-items: center;
+      background: transparent;
+      border: 1px solid transparent;
+      border-radius: 10px;
+      padding: 9px 12px;
+      cursor: default;
+      transition: background 0.12s, border-color 0.12s, opacity 0.18s;
+    }
+    .source-row:hover { background: var(--surface-hover); border-color: var(--border); }
+    .source-row.drag-over { border-color: var(--brand); background: rgba(91,141,238,0.08); }
+    .source-row.dragging { opacity: 0.3; }
+    .source-row.disabled { opacity: 0.45; }
+
+    .drag-handle {
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 2px; cursor: grab; opacity: 0;
+      transition: opacity 0.12s; padding: 2px 0;
+    }
+    .drag-handle span {
+      display: block; width: 12px; height: 1.5px;
+      background: var(--text-sub); border-radius: 2px;
+    }
+    .source-row:hover .drag-handle { opacity: 1; }
+
+    .source-info { display: flex; align-items: center; gap: 8px; min-width: 0; overflow: hidden; }
+    .source-name { font-size: 13px; font-weight: 600; white-space: nowrap; }
+
+    .cat-tag {
+      font-size: 10px; font-weight: 600;
+      border-radius: 5px; padding: 2px 6px;
+      white-space: nowrap; flex-shrink: 0; letter-spacing: 0.2px;
+    }
+    .cat-tag-china      { background: rgba(239,68,68,0.15);  color: #f87171; }
+    .cat-tag-global     { background: rgba(59,130,246,0.15); color: #60a5fa; }
+    .cat-tag-audiobook  { background: rgba(168,85,247,0.15); color: #c084fc; }
+    .cat-tag-aggregator { background: rgba(34,197,94,0.15);  color: #4ade80; }
+    .cat-tag-scraper    { background: rgba(234,179,8,0.15);  color: #facc15; }
+
+    .badge {
+      display: inline-flex; align-items: center; gap: 5px;
+      font-size: 11px; font-weight: 600;
+      border-radius: 999px; padding: 4px 10px;
+      border: 1px solid transparent;
+      white-space: nowrap; letter-spacing: 0.1px;
+    }
+    .badge::before {
+      content: ''; width: 5px; height: 5px;
+      border-radius: 50%; display: block;
+    }
+    .badge-ok      { color: var(--ok);  background: var(--ok-bg);  border-color: var(--ok-border); }
+    .badge-ok::before { background: var(--ok); box-shadow: 0 0 5px var(--ok); }
+    .badge-bad     { color: var(--bad); background: var(--bad-bg); border-color: var(--bad-border); }
+    .badge-bad::before { background: var(--bad); }
+    .badge-na      { color: var(--na);  background: var(--na-bg);  border-color: var(--na-border); }
+    .badge-na::before  { background: var(--na); }
+    .badge-probing {
+      color: var(--brand); background: rgba(91,141,238,0.1); border-color: rgba(91,141,238,0.3);
+      animation: pulse 1.2s ease-in-out infinite;
+    }
+    .badge-probing::before { background: var(--brand); animation: pulse 1.2s ease-in-out infinite; }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+    .toggle { position: relative; width: 38px; height: 22px; flex-shrink: 0; }
+    .toggle input { opacity: 0; width: 0; height: 0; position: absolute; }
+    .toggle-track {
+      position: absolute; inset: 0;
+      background: rgba(255,255,255,0.1);
+      border: 1px solid var(--border);
+      border-radius: 999px; cursor: pointer;
+      transition: background 0.2s, border-color 0.2s;
+    }
+    .toggle input:checked ~ .toggle-track {
+      background: rgba(91,141,238,0.55); border-color: rgba(91,141,238,0.7);
+    }
+    .toggle-thumb {
+      position: absolute; top: 3px; left: 3px;
+      width: 14px; height: 14px;
+      background: rgba(255,255,255,0.5);
+      border-radius: 50%; pointer-events: none;
+      transition: transform 0.2s, background 0.2s;
+    }
+    .toggle input:checked ~ .toggle-track .toggle-thumb {
+      transform: translateX(16px); background: white;
+    }
+
+    .empty-tip {
+      text-align: center;
+      padding: 48px 0;
+      color: var(--text-muted);
+      font-size: 13px;
+    }
+
+    /* ── toast ───────────────────────────────────────────────────── */
+    .toast {
+      position: fixed; bottom: 28px; right: 28px;
+      background: rgba(15,26,46,0.95);
+      border: 1px solid var(--border-bright);
+      border-radius: 12px; padding: 12px 18px;
+      font-size: 13px; font-weight: 600;
+      display: flex; align-items: center; gap: 8px;
+      backdrop-filter: blur(12px);
+      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+      transform: translateY(80px); opacity: 0;
+      transition: transform 0.28s cubic-bezier(0.34,1.56,0.64,1), opacity 0.22s;
+      z-index: 99;
+    }
+    .toast.show { transform: translateY(0); opacity: 1; }
+    .toast.success { border-color: var(--ok-border); }
+    .toast.success::before {
+      content: '✓'; width: 20px; height: 20px;
+      background: var(--ok-bg); border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 11px; color: var(--ok);
+    }
+  </style>
+</head>
+<body>
+  <div class="root">
+
+    <!-- nav -->
+    <div class="nav">
+      <div class="nav-logo">
+        <div class="nav-icon">♪</div>
+        <div>
+          <div class="nav-title">UNM Source Center</div>
+          <div class="nav-sub">Unblock Netease Music</div>
+        </div>
+      </div>
+      <div class="probe-status">
+        <div class="probe-dot" id="probeDot"></div>
+        <span id="probeLabel">等待探活…</span>
+        <button class="btn-recheck" id="btnRecheck">重新探活</button>
+      </div>
+    </div>
+
+    <!-- filter tabs + search -->
+    <div class="toolbar">
+      <div class="tabs">
+        <button class="tab tab-all active" data-tab="all">
+          全部 <span class="tab-count" id="cntAll">—</span>
+        </button>
+        <button class="tab tab-enabled" data-tab="enabled">
+          已启用 <span class="tab-count" id="cntEnabled">—</span>
+        </button>
+        <button class="tab tab-healthy" data-tab="healthy">
+          可用 <span class="tab-count" id="cntHealthy">—</span>
+        </button>
+      </div>
+      <div class="search-wrap">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+        </svg>
+        <input id="searchInput" type="text" placeholder="搜索源…" />
+      </div>
+    </div>
+
+    <!-- progress -->
+    <div class="progress-bar" id="progressBar">
+      <div class="progress-fill" id="progressFill"></div>
+    </div>
+
+    <!-- source list -->
+    <div class="source-list">
+      <div class="source-list-inner" id="sourceList"></div>
+    </div>
+
+  </div>
+
+  <div class="toast success" id="toast"><span class="toast-msg"></span></div>
+
+  <script>
+    let state   = { sources: [] }
+    let health  = {}
+    let probing = false
+    let activeTab = 'all'
+    let searchQ   = ''
+    let draggingIndex = null
+    let saveTimer = null
+
+    const CAT_NAME = {
+      china: '国内', global: '国际', audiobook: '电台', aggregator: '聚合', scraper: '第三方'
+    }
+
+    /* ── toast ───────────────────────────────────────────────────── */
+    const showToast = msg => {
+      const t = document.getElementById('toast')
+      t.querySelector('.toast-msg').textContent = msg
+      t.classList.add('show')
+      clearTimeout(t._timer)
+      t._timer = setTimeout(() => t.classList.remove('show'), 2000)
+    }
+
+    /* ── stats & tabs ────────────────────────────────────────────── */
+    const updateCounts = () => {
+      const total   = state.sources.length
+      const enabled = state.sources.filter(s => s.enabled).length
+      const healthy = state.sources.filter(s => health[s.key] && health[s.key].ok).length
+      document.getElementById('cntAll').textContent     = total
+      document.getElementById('cntEnabled').textContent = enabled
+      document.getElementById('cntHealthy').textContent = healthy
+    }
+
+    /* ── badge ───────────────────────────────────────────────────── */
+    const badgeFor = item => {
+      if (probing) return {cls: 'badge-probing', text: '探测中…'}
+      const h = health[item.key]
+      if (!h) return {cls: 'badge-na', text: '未探测'}
+      if (h.ok) return {cls: 'badge-ok', text: `${h.latency}ms`}
+      return {cls: 'badge-bad', text: '不可用'}
+    }
+
+    /* ── filter ──────────────────────────────────────────────────── */
+    const filterSources = () => {
+      let list = state.sources
+      if (activeTab === 'enabled') list = list.filter(s => s.enabled)
+      if (activeTab === 'healthy') list = list.filter(s => health[s.key] && health[s.key].ok)
+      if (searchQ) {
+        const q = searchQ.toLowerCase()
+        list = list.filter(s => s.label.toLowerCase().includes(q) || s.key.toLowerCase().includes(q))
+      }
+      return list
+    }
+
+    /* ── render ──────────────────────────────────────────────────── */
+    const makeRow = (item, globalIdx) => {
+      const b   = badgeFor(item)
+      const row = document.createElement('div')
+      row.className = 'source-row' + (item.enabled ? '' : ' disabled')
+      row.draggable = true
+      row.dataset.index = globalIdx
+
+      row.innerHTML = `
+        <div class="drag-handle"><span></span><span></span><span></span></div>
+        <div class="source-info">
+          <span class="source-name">${item.label}</span>
+          <span class="cat-tag cat-tag-${item.category}">${CAT_NAME[item.category] || item.category}</span>
+        </div>
+        <span class="badge ${b.cls}">${b.text}</span>
+        <label class="toggle">
+          <input type="checkbox" ${item.enabled ? 'checked' : ''} />
+          <div class="toggle-track"><div class="toggle-thumb"></div></div>
+        </label>
+      `
+
+      row.querySelector('input[type="checkbox"]').addEventListener('change', e => {
+        item.enabled = e.target.checked
+        if (item.enabled) {
+          state.sources = state.sources.filter(s => s.id !== item.id)
+          state.sources.unshift(item)
+        }
+        render()
+        scheduleSave()
+      })
+
+      row.addEventListener('dragstart', e => {
+        draggingIndex = globalIdx
+        row.classList.add('dragging')
+        e.dataTransfer.effectAllowed = 'move'
+      })
+      row.addEventListener('dragend', () => {
+        row.classList.remove('dragging')
+        draggingIndex = null
+        document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'))
+      })
+      row.addEventListener('dragenter', e => {
+        e.preventDefault()
+        if (draggingIndex !== null && draggingIndex !== globalIdx) row.classList.add('drag-over')
+      })
+      row.addEventListener('dragleave', () => row.classList.remove('drag-over'))
+      row.addEventListener('dragover',  e => e.preventDefault())
+      row.addEventListener('drop', e => {
+        e.preventDefault()
+        row.classList.remove('drag-over')
+        if (draggingIndex !== null && draggingIndex !== globalIdx)
+          moveSource(draggingIndex, globalIdx)
+      })
+
+      return row
+    }
+
+    const render = () => {
+      const el   = document.getElementById('sourceList')
+      const list = filterSources()
+      el.innerHTML = ''
+
+      if (!list.length) {
+        el.innerHTML = '<div class="empty-tip">没有符合条件的源</div>'
+        updateCounts()
+        return
+      }
+
+      // only show dividers when viewing "all"
+      if (activeTab === 'all' && !searchQ) {
+        const enabled  = list.filter(s => s.enabled)
+        const disabled = list.filter(s => !s.enabled)
+        if (enabled.length) {
+          el.appendChild(divider(`已启用 ${enabled.length}`))
+          enabled.forEach(item => el.appendChild(makeRow(item, state.sources.findIndex(s => s.id === item.id))))
+        }
+        if (disabled.length) {
+          el.appendChild(divider(`未启用 ${disabled.length}`))
+          disabled.forEach(item => el.appendChild(makeRow(item, state.sources.findIndex(s => s.id === item.id))))
+        }
+      } else {
+        list.forEach(item => el.appendChild(makeRow(item, state.sources.findIndex(s => s.id === item.id))))
+      }
+
+      updateCounts()
+    }
+
+    const divider = text => {
+      const d = document.createElement('div')
+      d.className = 'divider'
+      d.textContent = text
+      return d
+    }
+
+    const moveSource = (from, to) => {
+      if (from < 0 || to < 0 || from >= state.sources.length || to >= state.sources.length || from === to) return
+      const [item] = state.sources.splice(from, 1)
+      state.sources.splice(to, 0, item)
+      render()
+      scheduleSave()
+    }
+
+    /* ── auto-save (debounced 600ms) ─────────────────────────────── */
+    const scheduleSave = () => {
+      clearTimeout(saveTimer)
+      saveTimer = setTimeout(doSave, 600)
+    }
+
+    const doSave = async () => {
+      try {
+        await fetch('/__unm/api/sources/save', {
+          method: 'POST',
+          headers: {'content-type': 'application/json'},
+          body: JSON.stringify({
+            order:   state.sources.map(s => s.id),
+            enabled: state.sources.reduce((r, s) => (r[s.id] = !!s.enabled, r), {})
+          })
+        })
+        showToast('已自动保存')
+      } catch(e) { showToast('保存失败') }
+    }
+
+    /* ── probe ───────────────────────────────────────────────────── */
+    const probe = async () => {
+      if (probing) return
+      probing = true
+      health  = {}
+      const dot   = document.getElementById('probeDot')
+      const lbl   = document.getElementById('probeLabel')
+      const btn   = document.getElementById('btnRecheck')
+      const bar   = document.getElementById('progressBar')
+      const fill  = document.getElementById('progressFill')
+      dot.className  = 'probe-dot probing'
+      lbl.textContent = '探测中…'
+      btn.disabled    = true
+      bar.classList.add('active')
+      fill.style.width = '8%'
+      render()
+
+      try {
+        const res  = await fetch('/__unm/api/sources/health?keyword=' + encodeURIComponent('周杰伦'))
+        const data = await res.json()
+        data.result.forEach(item => { health[item.key || item.id] = item })
+        fill.style.width = '100%'
+        await new Promise(r => setTimeout(r, 350))
+      } catch(e) { console.error(e) }
+      finally {
+        probing = false
+        bar.classList.remove('active')
+        fill.style.width = '0%'
+        const healthy = state.sources.filter(s => health[s.key] && health[s.key].ok).length
+        dot.className   = 'probe-dot done'
+        lbl.textContent = `探活完成，${healthy} 个可用`
+        btn.disabled    = false
+        render()
+      }
+    }
+
+    /* ── tabs ────────────────────────────────────────────────────── */
+    document.querySelectorAll('.tab').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.tab').forEach(b => b.classList.remove('active'))
+        btn.classList.add('active')
+        activeTab = btn.dataset.tab
+        render()
+      })
+    })
+
+    /* ── search ──────────────────────────────────────────────────── */
+    document.getElementById('searchInput').addEventListener('input', e => {
+      searchQ = e.target.value.trim()
+      render()
+    })
+
+    /* ── recheck button ──────────────────────────────────────────── */
+    document.getElementById('btnRecheck').addEventListener('click', probe)
+
+    /* ── init ────────────────────────────────────────────────────── */
+    const init = async () => {
+      const res  = await fetch('/__unm/api/sources')
+      const data = await res.json()
+      state = data
+      render()
+      // auto-probe in background after a short delay
+      setTimeout(probe, 400)
+    }
+
+    init()
+  </script>
+</body>
+</html>

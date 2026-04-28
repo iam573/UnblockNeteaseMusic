@@ -1,77 +1,77 @@
 const cache = require('../cache')
 const insure = require('./insure')
 const select = require('./select')
-const crypto = require('../crypto')
 const request = require('../request')
 
-const format = song => ({
-	id: song.musicrid.split('_').pop(),
-	name: song.name,
-	duration: song.songTimeMinutes.split(':').reduce((minute, second) => minute * 60 + parseFloat(second), 0) * 1000,
-	album: {id: song.albumid, name: song.album},
-	artists: song.artist.split('&').map((name, index) => ({id: index ? null : song.artistid, name}))
-})
+const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36'
 
+const format = song => {
+	const rid = (song.MUSICRID || song.musicrid || '').replace(/^MUSIC_/, '')
+	const dur = song.DURATION || song.duration || 0
+	const artist = (song.ARTIST || song.artist || '')
+	const artistId = song.ARTISTID || song.artistid || null
+	return {
+		id: rid,
+		name: song.NAME || song.name || '',
+		duration: parseInt(dur) * 1000,
+		album: {id: song.ALBUMID || song.albumid, name: song.ALBUM || song.album || ''},
+		artists: artist.split('&').map((name, i) => ({id: i === 0 ? artistId : null, name: name.trim()}))
+	}
+}
+
+// New search endpoint — no kw_token required
 const search = info => {
-	// const url =
-	// 	// 'http://search.kuwo.cn/r.s?' +
-	// 	// 'ft=music&itemset=web_2013&client=kt&' +
-	// 	// 'rformat=json&encoding=utf8&' +
-	// 	// 'all=' + encodeURIComponent(info.keyword) + '&pn=0&rn=20'
-	// 	'http://search.kuwo.cn/r.s?' +
-	// 	'ft=music&rformat=json&encoding=utf8&' +
-	// 	'rn=8&callback=song&vipver=MUSIC_8.0.3.1&' +
-	// 	'SONGNAME=' + encodeURIComponent(info.name) + '&' +
-	// 	'ARTIST=' + encodeURIComponent(info.artists[0].name)
-
-	// return request('GET', url)
-	// .then(response => response.body())
-	// .then(body => {
-	// 	const jsonBody = eval(
-	// 		'(' + body
-	// 		.replace(/\n/g, '')
-	// 		.match(/try\s*\{[^=]+=\s*(.+?)\s*\}\s*catch/)[1]
-	// 		.replace(/;\s*song\s*\(.+\)\s*;\s*/, '') + ')'
-	// 	)
-	// 	const matched = jsonBody.abslist[0]
-	// 	if (matched)
-	// 		return matched.MUSICRID.split('_').pop()
-	// 	else
-	// 		return Promise.reject()
-	// })
-
 	const keyword = encodeURIComponent(info.keyword.replace(' - ', ''))
-	const url = `http://www.kuwo.cn/api/www/search/searchMusicBykeyWord?key=${keyword}&pn=1&rn=30`
-
-	return request('GET', `http://kuwo.cn/search/list?key=${keyword}`)
-	.then(response => response.headers['set-cookie'].find(line => line.includes('kw_token')).replace(/;.*/, '').split('=').pop())
-	.then(token => request('GET', url, {referer: `http://www.kuwo.cn/search/list?key=${keyword}`, csrf: token, cookie: `kw_token=${token}`}))
+	const url = `http://www.kuwo.cn/search/searchMusicBykeyWord?vipver=1&client=kt&ft=music&cluster=0&strategy=2012&encoding=utf8&rformat=json&mobi=1&issubtitle=1&show_copyright_off=1&pn=0&rn=30&all=${keyword}`
+	return request('GET', url, {'user-agent': UA})
 	.then(response => response.json())
 	.then(jsonBody => {
-		const list = jsonBody.data.list.map(format)
+		const list = (jsonBody.abslist || []).map(format)
 		const matched = select(list, info)
 		return matched ? matched.id : Promise.reject()
 	})
 }
 
-const track = id => {
-	const url = (crypto.kuwoapi
-		? 'http://mobi.kuwo.cn/mobi.s?f=kuwo&q=' + crypto.kuwoapi.encryptQuery(
-			'corp=kuwo&p2p=1&type=convert_url2&sig=0&format=' + ['flac', 'mp3'].slice(select.ENABLE_FLAC ? 0 : 1).join('|') + '&rid=' + id
-		)
-		: 'http://antiserver.kuwo.cn/anti.s?type=convert_url&format=mp3&response=url&rid=MUSIC_' + id // flac refuse
-		// : 'http://www.kuwo.cn/url?format=mp3&response=url&type=convert_url3&br=320kmp3&rid=' + id // flac refuse
-	)
-
-	return request('GET', url, {'user-agent': 'okhttp/3.10.0'})
-	.then(response => response.body())
+// Third-party track APIs that don't require cookies
+const trycgg = (id, level) =>
+	request('GET', `https://kw-api.cenguigui.cn/?id=${id}&type=song&level=${level}&format=json`)
+	.then(res => res.json())
 	.then(body => {
-		const url = (body.match(/http[^\s$"]+/) || [])[0]
-		return url || Promise.reject()
+		const url = body && body.data && body.data.url
+		if (!url || !url.startsWith('http')) return Promise.reject()
+		return url
 	})
+
+const trynxinxz = (id, level) =>
+	request('GET', `http://music.nxinxz.com/kw.php?id=${id}&level=${level}&type=json`)
+	.then(res => res.json())
+	.then(body => {
+		const url = body && body.data && body.data.url
+		if (!url || !url.startsWith('http')) return Promise.reject()
+		return url
+	})
+
+const track = id => {
+	const levels = ['lossless', 'exhigh', 'high', 'standard']
+	const tryLevels = (apis) =>
+		levels.reduce((chain, level) =>
+			chain.catch(() =>
+				apis.reduce((c2, fn) => c2.catch(() => fn(id, level)), Promise.reject())
+			),
+			Promise.reject()
+		)
+	return tryLevels([trycgg, trynxinxz])
 	.catch(() => insure().kuwo.track(id))
 }
 
 const check = info => cache(search, info).then(track)
 
-module.exports = {check, track}
+const health = keyword =>
+	search({
+		keyword: keyword || '周杰伦',
+		name: keyword || '周杰伦',
+		album: {id: 0, name: ''},
+		artists: []
+	}).then(() => true).catch(() => false)
+
+module.exports = {check, health}

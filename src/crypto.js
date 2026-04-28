@@ -8,8 +8,23 @@ const eapiKey = 'e82ckenh8dichen8'
 const linuxapiKey = 'rFgB&h#%2?^eDg:Q'
 
 const decrypt = (buffer, key) => {
-	const decipher = crypto.createDecipheriv('aes-128-ecb', key, '')
-	return Buffer.concat([decipher.update(buffer), decipher.final()])
+	try {
+		const decipher = crypto.createDecipheriv('aes-128-ecb', key, '')
+		return Buffer.concat([decipher.update(buffer), decipher.final()])
+	} catch(e) {
+		const decipher = crypto.createDecipheriv('aes-128-ecb', key, '')
+		decipher.setAutoPadding(false)
+		return Buffer.concat([decipher.update(buffer), decipher.final()])
+	}
+}
+
+// Decrypt an eapi response body: skip 4-byte custom header, discard trailing bytes
+// that don't fill a full AES block, then AES-128-ECB decrypt.
+const decryptResponse = (buffer, key) => {
+	const data = buffer.length > 4 ? buffer.slice(4) : buffer
+	const rem = data.length % 16
+	const aligned = rem ? data.slice(0, data.length - rem) : data
+	return decrypt(aligned, key)
 }
 
 const encrypt = (buffer, key) => {
@@ -21,6 +36,7 @@ module.exports = {
 	eapi: {
 		encrypt: buffer => encrypt(buffer, eapiKey),
 		decrypt: buffer => decrypt(buffer, eapiKey),
+		decryptResponse: buffer => decryptResponse(buffer, eapiKey),
 		encryptRequest: (url, object) => {
 			url = parse(url)
 			const text = JSON.stringify(object)

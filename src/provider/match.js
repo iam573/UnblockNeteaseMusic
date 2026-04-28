@@ -1,35 +1,122 @@
 const find = require('./find')
 const request = require('../request')
+const sourceManager = require('../sourceManager')
+const musichubBridge = require('./musichubBridge')
 
-const provider = {
-	netease: require('./netease'),
-	qq: require('./qq'),
-	xiami: require('./xiami'),
-	baidu: require('./baidu'),
-	kugou: require('./kugou'),
-	kuwo: require('./kuwo'),
-	migu: require('./migu'),
-	joox: require('./joox'),
-	youtube: require('./youtube')
+const provider = sourceManager.catalog.reduce((result, item) => Object.assign(result, {
+	[item.key]: {
+		label: item.label,
+		check: info => musichubBridge.check(item.key, info),
+		health: keyword => musichubBridge.health(item.key, keyword)
+	}
+}), {})
+
+const fmt = bytes => bytes > 0 ? `${(bytes / 1048576).toFixed(2)}MB` : '?'
+const pad = (s, n) => String(s).padEnd(n)
+
+// Estimate actual audio duration (seconds) from file size + detected bitrate.
+// Returns null when bitrate is unknown (can't reliably estimate).
+const estimatedAudioDuration = song => {
+	if (!song.size || song.size <= 0) return null
+	if (!song.br || song.br <= 0 || song.br >= 999000) return null // FLAC / unknown br
+	return song.size / (song.br / 8) // bytes / (bits-per-sec / 8) = seconds
+}
+
+// Minimum expected file size (bytes) for a full song at ~64kbps.
+// Anything below this threshold is almost certainly a short trial clip.
+const minExpectedBytes = (expectedMs, minBr = 64000) =>
+	expectedMs > 0 ? (expectedMs / 1000) * (minBr / 8) * 0.7 : 0
+
+// A result is a trial if:
+//   1. Estimated duration (size/br) is < 70% of expected full length, OR
+//   2. Bitrate is unknown but file size is below the floor for ~64kbps × 70%
+const isTrial = (song, expectedMs) => {
+	if (!expectedMs) return false
+	const est = estimatedAudioDuration(song)
+	if (est !== null) return est < (expectedMs / 1000) * 0.7
+	// br unknown — fall back to absolute size floor
+	if (song.size > 0) return song.size < minExpectedBytes(expectedMs)
+	return false
+}
+
+// race: resolve with the first source that returns a valid playable URL.
+// Results are stored in pre-allocated slots (indexed by candidate position)
+// so the caller can always print them in the original order.
+const raceCheck = (candidates, info, slots) => new Promise((resolve, reject) => {
+	let remaining = candidates.length
+	if (!remaining) return reject()
+	candidates.forEach((name, idx) => {
+		provider[name].check(info)
+		.then(url => {
+			if (!url) { slots[idx] = {state: 'no_url'}; return Promise.reject() }
+			slots[idx] = {state: 'checking', url}
+			return check(url)
+		})
+		.then(song => {
+			if (!song || !song.url) { slots[idx] = {state: 'dead', url: slots[idx].url}; return Promise.reject() }
+			if (isTrial(song, info.duration)) {
+				slots[idx] = {
+					state: 'trial',
+					url: slots[idx].url,
+					est: Math.round(estimatedAudioDuration(song)),
+					full: Math.round((info.duration || 0) / 1000),
+					size: song.size
+				}
+				return Promise.reject()
+			}
+			slots[idx] = {state: 'ok', url: song.url, size: song.size, br: song.br}
+			resolve({song, source: name, idx})
+		})
+		.catch(() => {
+			if (!slots[idx]) slots[idx] = {state: 'failed'}
+			if (--remaining === 0) reject()
+		})
+	})
+})
+
+const slotLine = (idx, label, slot) => {
+	const num = String(idx + 1).padStart(2)
+	const lbl = pad(label, 16)
+	if (!slot)                  return `  ${num}. ${lbl} -`
+	if (slot.state === 'no_url') return `  ${num}. ${lbl} ✗ no url`
+	if (slot.state === 'failed') return `  ${num}. ${lbl} ✗ error`
+	if (slot.state === 'dead')   return `  ${num}. ${lbl} ✗ url dead   ${slot.url}`
+	if (slot.state === 'trial')  return `  ${num}. ${lbl} ✗ trial ~${slot.est}s/${slot.full}s ${fmt(slot.size)}   ${slot.url}`
+	if (slot.state === 'checking') return `  ${num}. ${lbl} ↓ ${slot.url}`
+	if (slot.state === 'ok')     return `  ${num}. ${lbl} ✓ ${fmt(slot.size)} ${slot.br ? slot.br/1000+'kbps' : '?'}   ${slot.url}`
+	return `  ${num}. ${lbl} ?`
+}
+
+const printMatch = (info, candidate, slots, footer) => {
+	const dur = info.duration ? `${Math.round(info.duration / 1000)}s` : '?s'
+	const lines = [
+		`[UNM] ┌─ match [${info.id}] ${info.name}  (${dur})`,
+		`[UNM] │  platforms (${candidate.length}): ${candidate.map(n => (provider[n] && provider[n].label) || n).join(' · ')}`,
+		`[UNM] │  results:`,
+		...candidate.map((name, idx) => slotLine(idx, (provider[name] && provider[name].label) || name, slots[idx])),
+		footer
+	]
+	console.log(lines.join('\n'))
 }
 
 const match = (id, source) => {
-	let meta = {}
-	const candidate = (source || global.source || ['qq', 'kuwo', 'migu']).filter(name => name in provider)
+	let meta = {}, slots = [], candidate = []
+	candidate = sourceManager.resolveMatchOrder(source || global.source).filter(name => name in provider)
+	slots = new Array(candidate.length).fill(null)
 	return find(id)
 	.then(info => {
 		meta = info
-		return Promise.all(candidate.map(name => provider[name].check(info).catch(() => {})))
+		return raceCheck(candidate, info, slots)
 	})
-	.then(urls => {
-		urls = urls.filter(url => url)
-		return Promise.all(urls.map(url => check(url)))
+	.then(({song, source}) => {
+		const label = (provider[source] && provider[source].label) || source
+		printMatch(meta, candidate, slots,
+			`[UNM] └─ ✓ matched by ${label}  size:${fmt(song.size)}  br:${song.br ? song.br/1000+'kbps' : '?'}\n         ${song.url}`)
+		return song
 	})
-	.then(songs => {
-		songs = songs.filter(song => song.url)
-		if (!songs.length) return Promise.reject()
-		console.log(`[${meta.id}] ${meta.name}\n${songs[0].url}`)
-		return songs[0]
+	.catch(err => {
+		printMatch(meta, candidate, slots, `[UNM] └─ ✗ all platforms failed`)
+		return Promise.reject(err)
 	})
 }
 
@@ -93,5 +180,8 @@ const decode = buffer => {
 		return map[version][layer][bitrate]
 	}
 }
+
+match.provider = provider
+match.sourceManager = sourceManager
 
 module.exports = match

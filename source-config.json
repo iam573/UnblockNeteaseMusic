@@ -1,0 +1,26 @@
+{
+  "enabled": {
+    "NeteaseMusicClient": false,
+    "QQMusicClient": true,
+    "KugouMusicClient": false,
+    "KuwoMusicClient": true,
+    "MiguMusicClient": true,
+    "FiveSingMusicClient": false,
+    "YouTubeMusicClient": true,
+    "JooxMusicClient": false,
+    "TuneHubMusicClient": true,
+    "JBSouMusicClient": true
+  },
+  "order": [
+    "JBSouMusicClient",
+    "MiguMusicClient",
+    "YouTubeMusicClient",
+    "FiveSingMusicClient",
+    "TuneHubMusicClient",
+    "QQMusicClient",
+    "KuwoMusicClient",
+    "JooxMusicClient",
+    "NeteaseMusicClient",
+    "KugouMusicClient"
+  ]
+}

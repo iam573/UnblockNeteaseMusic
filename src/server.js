@@ -6,10 +6,14 @@ const parse = require('url').parse
 const sni = require('./sni')
 const hook = require('./hook')
 const request = require('./request')
+const manage = require('./manage')
 
 const proxy = {
 	core: {
 		mitm: (req, res) => {
+			if (req.url.startsWith('/__unm/')) {
+				return Promise.resolve(manage.handle(req, res)).catch(() => {})
+			}
 			if (req.url == '/proxy.pac') {
 				const url = parse('http://' + req.headers.host)
 				res.writeHead(200, {'Content-Type': 'application/x-ns-proxy-autoconfig'})

@@ -4,6 +4,7 @@ const crypto = require('./crypto')
 const request = require('./request')
 const match = require('./provider/match')
 const querystring = require('querystring')
+const zlib = require('zlib')
 
 const hook = {
 	request: {
@@ -104,6 +105,9 @@ hook.request.before = ctx => {
 				}
 				netease.path = netease.path.replace(/\/\d*$/, '')
 				ctx.netease = netease
+				if (netease.path.includes('privilege') || netease.path.includes('url')) {
+					console.log('[UNM] request:', netease.path, 'param:', JSON.stringify(netease.param).slice(0, 160))
+				}
 				// console.log(netease.path, netease.param)
 
 				if (netease.path == '/api/song/enhance/download/url')
@@ -145,13 +149,33 @@ hook.request.after = ctx => {
 		.then(buffer => buffer.length ? proxyRes.body = buffer : Promise.reject())
 		.then(buffer => {
 			const patch = string => string.replace(/([^\\]"\s*:\s*)(\d{16,})(\s*[}|,])/g, '$1"$2L"$3') // for js precision
-			try {
-				netease.encrypted = false
-				netease.jsonBody = JSON.parse(patch(buffer.toString()))
+			const parseJson = buffer => JSON.parse(patch(buffer.toString()))
+			const parseBody = () => {
+				const candidates = [
+					['plain', () => [parseJson(buffer), false]],
+					['br', () => [parseJson(zlib.brotliDecompressSync(buffer)), false]],
+					['br-eapi', () => [parseJson(crypto.eapi.decrypt(zlib.brotliDecompressSync(buffer))), true]],
+					['eapi-response', () => [parseJson(crypto.eapi.decryptResponse(buffer)), true]],
+					['eapi', () => [parseJson(crypto.eapi.decrypt(buffer)), true]],
+				]
+				for (const [mode, parser] of candidates) {
+					try {
+						const [jsonBody, encrypted] = parser()
+						netease.jsonBody = jsonBody
+						netease.encrypted = encrypted
+						netease.parseMode = mode
+						return true
+					}
+					catch(e) {}
+				}
+				return false
 			}
-			catch(error) {
-				netease.encrypted = true
-				netease.jsonBody = JSON.parse(patch(crypto.eapi.decrypt(buffer).toString()))
+			if (!parseBody()) {
+				console.log('[UNM] parse failed:', netease.path, 'len:', buffer.length, 'enc:', proxyRes.headers && proxyRes.headers['content-encoding'], 'head:', buffer.slice(0, 8).toString('hex'))
+				return
+			}
+			if (netease.path.includes('privilege') || netease.path.includes('url')) {
+				console.log('[UNM] parsed:', netease.path, 'mode:', netease.parseMode, 'code:', netease.jsonBody.code, 'data:', Array.isArray(netease.jsonBody.data) ? netease.jsonBody.data.length : typeof(netease.jsonBody.data))
 			}
 
 			if (new Set([401, 512]).has(netease.jsonBody.code) && !netease.web) {
@@ -161,16 +185,57 @@ hook.request.after = ctx => {
 			else if (netease.path.includes('url')) return tryMatch(ctx)
 		})
 		.then(() => {
+			if (!netease.jsonBody) return
+			if (!proxyRes.headers) return
 			['transfer-encoding', 'content-encoding', 'content-length'].filter(key => key in proxyRes.headers).forEach(key => delete proxyRes.headers[key])
 
 			const inject = (key, value) => {
 				if (typeof(value) === 'object' && value != null) {
 					if ('fee' in value) value['fee'] = 0
+					if ('payed' in value) value['payed'] = 0
+					if ('status' in value) value['status'] = 0
+					if ('noCopyrightRcmd' in value) value['noCopyrightRcmd'] = null
+					if ('freeTrialInfo' in value) value['freeTrialInfo'] = null
+					if ('preSell' in value) value['preSell'] = false
+					if ('playable' in value) value['playable'] = true
+					if ('toast' in value) value['toast'] = false
+					if ('cs' in value) value['cs'] = false
+					if ('flag' in value) value['flag'] = 4
+					if ('copyright' in value) value['copyright'] = 1
+					if ('resCopyright' in value) value['resCopyright'] = 1
+					if ('copyrightId' in value) value['copyrightId'] = 0
+					if ('rightSource' in value) value['rightSource'] = 0
+					if ('rscl' in value) value['rscl'] = null
+					if ('freeTrialPrivilege' in value) {
+						value['freeTrialPrivilege'] = Object.assign({}, value['freeTrialPrivilege'], {
+							resConsumable: false,
+							userConsumable: false,
+							listenType: null,
+							cannotListenReason: null,
+							playReason: null,
+							freeLimitTagType: null
+						})
+					}
+					if ('chargeInfoList' in value && Array.isArray(value['chargeInfoList'])) {
+						value['chargeInfoList'] = value['chargeInfoList'].map(info => Object.assign({}, info, {chargeType: 0, chargeUrl: null, chargeMessage: null}))
+					}
 					if ('st' in value && 'pl' in value && 'dl' in value && 'subp' in value) { // batch modify
 						value['st'] = 0
 						value['subp'] = 1
 						value['pl'] = (value['pl'] == 0) ? 320000 : value['pl']
 						value['dl'] = (value['dl'] == 0) ? 320000 : value['dl']
+						if ('sp' in value) value['sp'] = 7
+						if ('cp' in value) value['cp'] = 1
+						if ('fl' in value) value['fl'] = (value['fl'] == 0) ? 320000 : value['fl']
+						if ('maxbr' in value) value['maxbr'] = (value['maxbr'] == 0) ? 320000 : value['maxbr']
+						if ('playMaxbr' in value) value['playMaxbr'] = (value['playMaxbr'] == 0) ? 320000 : value['playMaxbr']
+						if ('downloadMaxbr' in value) value['downloadMaxbr'] = (value['downloadMaxbr'] == 0) ? 320000 : value['downloadMaxbr']
+						if ('plLevel' in value) value['plLevel'] = 'exhigh'
+						if ('dlLevel' in value) value['dlLevel'] = 'exhigh'
+						if ('flLevel' in value) value['flLevel'] = 'exhigh'
+						if ('maxBrLevel' in value) value['maxBrLevel'] = 'exhigh'
+						if ('playMaxBrLevel' in value) value['playMaxBrLevel'] = 'exhigh'
+						if ('downloadMaxBrLevel' in value) value['downloadMaxBrLevel'] = 'exhigh'
 					}
 				}
 				return value
@@ -282,7 +347,11 @@ const tryMatch = ctx => {
 
 	const inject = item => {
 		item.flag = 0
-		if ((item.code != 200 || item.freeTrialInfo) && (target == 0 || item.id == target)) {
+		if (item.url) item.url = item.url.replace(/(m\d+?)(?!c)\.music\.126\.net/, '$1c.music.126.net')
+		if (netease.path.includes('url')) {
+			console.log('[UNM] player item:', item.id, 'code:', item.code, 'url:', item.url ? parse(item.url).host : 'no', 'br:', item.br, 'trial:', item.freeTrialInfo ? 'yes' : 'no')
+		}
+		if ((item.code != 200 || !item.url || !item.br || item.freeTrialInfo) && (target == 0 || item.id == target)) {
 			return match(item.id)
 			.then(song => {
 				item.type = song.br === 999000 ? 'flac' : 'mp3'
@@ -316,7 +385,7 @@ const tryMatch = ctx => {
 				}
 				catch(e) {}
 			})
-			.catch(() => {})
+			.catch(() => console.log('[UNM] match failed:', item.id))
 		}
 		else if (item.code == 200 && netease.web) {
 			item.url = item.url.replace(/(m\d+?)(?!c)\.music\.126\.net/, '$1c.music.126.net')
