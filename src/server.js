@@ -8,6 +8,13 @@ const hook = require('./hook')
 const request = require('./request')
 const manage = require('./manage')
 
+const shouldLogHost = host => host && (
+	host.endsWith('music.163.com') ||
+	host.endsWith('music.126.net') ||
+	host.endsWith('netease.com') ||
+	host.endsWith('163.com')
+)
+
 const proxy = {
 	core: {
 		mitm: (req, res) => {
@@ -16,10 +23,11 @@ const proxy = {
 			}
 			if (req.url == '/proxy.pac') {
 				const url = parse('http://' + req.headers.host)
+				const hosts = Array.from(hook.target.host).filter(host => net.isIP(host) === 0 && host !== 'localhost')
 				res.writeHead(200, {'Content-Type': 'application/x-ns-proxy-autoconfig'})
 				res.end(`
 					function FindProxyForURL(url, host) {
-						if (${Array.from(hook.target.host).map(host => (`host == '${host}'`)).join(' || ')}) {
+						if (${hosts.map(host => (`host == '${host}'`)).join(' || ') || 'false'} || dnsDomainIs(host, '.music.163.com')) {
 							return 'PROXY ${url.hostname}:${url.port || 80}'
 						}
 						return 'DIRECT'
@@ -41,6 +49,7 @@ const proxy = {
 			}
 		},
 		tunnel: (req, socket, head) => {
+			req.originalUrl = req.url
 			const ctx = {req, socket, head}
 			Promise.resolve()
 			.then(() => proxy.protect(ctx))
@@ -69,10 +78,15 @@ const proxy = {
 	log: ctx => {
 		const {req, socket, decision} = ctx
 		const mark = {close: '|', blank: '-', proxy: '>'}[decision] || '>'
-		if (socket)
-			console.log('TUNNEL', mark, req.url)
-		else
+		if (socket) {
+			const host = parse('https://' + (req.originalUrl || req.url)).hostname
+			if (!shouldLogHost(host)) return
+			console.log('TUNNEL', mark, req.url, req.originalUrl ? `(from ${req.originalUrl})` : '')
+		}
+		else {
+			if (!shouldLogHost(parse(req.url).hostname)) return
 			console.log('MITM', mark, parse(req.url).host, req.socket.encrypted ? '(ssl)' : '')
+		}
 	},
 	authenticate: ctx => {
 		const {req, res, socket} = ctx
@@ -107,6 +121,9 @@ const proxy = {
 			if (ctx.decision === 'close') return reject(ctx.error = ctx.decision)
 			const {req} = ctx
 			const url = parse(req.url)
+				if (url.hostname && url.hostname.includes('music.163.com')) {
+					console.log('REQ', '>', req.method, url.hostname, url.path)
+				}
 			const options = request.configure(req.method, url, req.headers)
 			ctx.proxyReq = request.create(url)(options)
 			.on('response', proxyRes => resolve(ctx.proxyRes = proxyRes))
@@ -114,7 +131,19 @@ const proxy = {
 			req.readable ? req.pipe(ctx.proxyReq) : ctx.proxyReq.end(req.body)
 		}),
 		response: ctx => {
-			const {res, proxyRes} = ctx
+			const {req, res, proxyRes} = ctx
+			const url = req && parse(req.url)
+			if (url && url.path && url.path.startsWith('/api/pccache/patch/get')) {
+				return request.read(proxyRes, true)
+				.then(buffer => {
+					console.log('PCCACHE', '>', proxyRes.statusCode, buffer.toString().slice(0, 500))
+					proxyRes.body = buffer
+				})
+				.then(() => {
+					res.writeHead(proxyRes.statusCode, proxyRes.headers)
+					res.end(proxyRes.body)
+				})
+			}
 			proxyRes.on('error', () => proxy.abort(proxyRes.socket, 'proxyRes'))
 			res.writeHead(proxyRes.statusCode, proxyRes.headers)
 			proxyRes.readable ? proxyRes.pipe(res) : res.end(proxyRes.body)
@@ -144,9 +173,16 @@ const proxy = {
 		dock: ctx => new Promise(resolve => {
 			const {req, head, socket} = ctx
 			socket
-			.once('data', data => resolve(ctx.head = Buffer.concat([head, data])))
+			.once('data', data => {
+				resolve(ctx.head = Buffer.concat([head, data]))
+			})
 			.write(`HTTP/${req.httpVersion} 200 Connection established\r\n\r\n`)
-		}).then(data => ctx.socket.sni = sni(data)).catch(() => {}),
+		}).then(data => {
+			ctx.socket.sni = sni(data)
+			if (shouldLogHost(ctx.socket.sni)) {
+				console.log('SNI', '>', ctx.socket.sni || '(none)', ctx.req.originalUrl ? `(from ${ctx.req.originalUrl})` : '')
+			}
+		}).catch(() => {}),
 		pipe: ctx => {
 			if (ctx.decision === 'blank') return Promise.reject(ctx.error = ctx.decision)
 			const {head, socket, proxySocket} = ctx
@@ -156,6 +192,13 @@ const proxy = {
 			proxySocket.pipe(socket)
 		},
 		close: ctx => {
+			if (ctx.error) {
+				const error = ctx.error && (ctx.error.code || ctx.error.message || ctx.error)
+				const host = ctx.req && parse('https://' + (ctx.req.originalUrl || ctx.req.url)).hostname
+				if (shouldLogHost(host)) {
+					console.log('TUNNEL', '!', error, ctx.req && ctx.req.originalUrl ? `(from ${ctx.req.originalUrl})` : '')
+				}
+			}
 			proxy.abort(ctx.socket, 'tunnel')
 		}
 	}

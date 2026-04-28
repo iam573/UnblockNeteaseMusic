@@ -23,6 +23,8 @@ const hook = {
 	}
 }
 
+const isMusicHost = host => host && (hook.target.host.has(host) || host.endsWith('.music.163.com'))
+
 hook.target.host = new Set([
 	'music.163.com',
 	'interface.music.163.com',
@@ -105,9 +107,7 @@ hook.request.before = ctx => {
 				}
 				netease.path = netease.path.replace(/\/\d*$/, '')
 				ctx.netease = netease
-				if (netease.path.includes('privilege') || netease.path.includes('url')) {
-					console.log('[UNM] request:', netease.path, 'param:', JSON.stringify(netease.param).slice(0, 160))
-				}
+				console.log('[UNM] request:', netease.path, 'param:', JSON.stringify(netease.param).slice(0, 160))
 				// console.log(netease.path, netease.param)
 
 				if (netease.path == '/api/song/enhance/download/url')
@@ -174,9 +174,7 @@ hook.request.after = ctx => {
 				console.log('[UNM] parse failed:', netease.path, 'len:', buffer.length, 'enc:', proxyRes.headers && proxyRes.headers['content-encoding'], 'head:', buffer.slice(0, 8).toString('hex'))
 				return
 			}
-			if (netease.path.includes('privilege') || netease.path.includes('url')) {
-				console.log('[UNM] parsed:', netease.path, 'mode:', netease.parseMode, 'code:', netease.jsonBody.code, 'data:', Array.isArray(netease.jsonBody.data) ? netease.jsonBody.data.length : typeof(netease.jsonBody.data))
-			}
+			console.log('[UNM] parsed:', netease.path, 'mode:', netease.parseMode, 'code:', netease.jsonBody.code, 'data:', Array.isArray(netease.jsonBody.data) ? netease.jsonBody.data.length : typeof(netease.jsonBody.data))
 
 			if (new Set([401, 512]).has(netease.jsonBody.code) && !netease.web) {
 				if (netease.path.includes('manipulate')) return tryCollect(ctx)
@@ -261,7 +259,7 @@ hook.request.after = ctx => {
 hook.connect.before = ctx => {
 	const {req} = ctx
 	const url = parse('https://' + req.url)
-	if ([url.hostname, req.headers.host].some(host => hook.target.host.has(host))) {
+	if ([url.hostname, req.headers.host].some(isMusicHost)) {
 		if (url.port == 80) {
 			req.url = `${global.address || 'localhost'}:${global.port[0]}`
 			req.local = true
@@ -282,7 +280,7 @@ hook.negotiate.before = ctx => {
 	const url = parse('https://' + req.url)
 	const target = hook.target.host
 	if (req.local || decision) return
-	if (target.has(socket.sni) && !target.has(url.hostname)) {
+	if (isMusicHost(socket.sni) && !isMusicHost(url.hostname)) {
 		target.add(url.hostname)
 		ctx.decision = 'blank'
 	}
