@@ -55,6 +55,7 @@ hook.target.path = new Set([
 	'/api/song/enhance/player/url',
 	'/api/song/enhance/player/url/v1',
 	'/api/song/enhance/download/url',
+	'/api/song/enhance/download/url/v1',
 	'/api/song/enhance/privilege',
 	'/batch',
 	'/api/batch',
@@ -107,12 +108,13 @@ hook.request.before = ctx => {
 					netease.path = data[0]
 					netease.param = JSON.parse(data[1])
 				}
-				netease.path = netease.path.replace(/\/\d*$/, '')
+					netease.e_r = ['true', '1', true, 1].includes(netease.param && netease.param.e_r)
+					netease.path = netease.path.replace(/\/\d*$/, '')
 				ctx.netease = netease
 				console.log('[UNM] request:', netease.path, 'param:', JSON.stringify(netease.param).slice(0, 160))
 				// console.log(netease.path, netease.param)
 
-				if (netease.path == '/api/song/enhance/download/url')
+				if (netease.path.startsWith('/api/song/enhance/download/url'))
 					return pretendPlay(ctx)
 			}
 		})
@@ -151,21 +153,44 @@ hook.request.after = ctx => {
 		.then(buffer => buffer.length ? proxyRes.body = buffer : Promise.reject())
 		.then(buffer => {
 			const patch = string => string.replace(/([^\\]"\s*:\s*)(\d{16,})(\s*[}|,])/g, '$1"$2L"$3') // for js precision
-			const parseJson = buffer => JSON.parse(patch(buffer.toString()))
+			const normalizeJsonText = text => {
+				text = String(text || '').replace(/^\uFEFF/, '').replace(/\0+$/g, '').trim()
+				const starts = [text.indexOf('{'), text.indexOf('[')].filter(index => index >= 0)
+				const start = starts.length ? Math.min.apply(null, starts) : -1
+				const end = Math.max(text.lastIndexOf('}'), text.lastIndexOf(']'))
+				if (start >= 0 && end > start) text = text.slice(start, end + 1)
+				return text
+			}
+			const parseJson = buffer => JSON.parse(patch(normalizeJsonText(buffer.toString())))
+			const parseEncrypted = (payload, label) => {
+				const maxSkip = Math.min(8, Math.max(0, payload.length - 16))
+				for (let skip = 0; skip <= maxSkip; skip += 1) {
+					try {
+						const sliced = payload.slice(skip)
+						const rem = sliced.length % 16
+						const aligned = rem ? sliced.slice(0, sliced.length - rem) : sliced
+						if (aligned.length < 16) continue
+						return [parseJson(crypto.eapi.decrypt(aligned)), true, `${label}@${skip}`]
+					}
+					catch (e) {}
+				}
+				throw new Error(`unable to parse encrypted payload: ${label}`)
+			}
 			const parseBody = () => {
 				const candidates = [
-					['plain', () => [parseJson(buffer), false]],
-					['br', () => [parseJson(zlib.brotliDecompressSync(buffer)), false]],
-					['br-eapi', () => [parseJson(crypto.eapi.decrypt(zlib.brotliDecompressSync(buffer))), true]],
-					['eapi-response', () => [parseJson(crypto.eapi.decryptResponse(buffer)), true]],
-					['eapi', () => [parseJson(crypto.eapi.decrypt(buffer)), true]],
+					['plain', () => [parseJson(buffer), false, 'plain']],
+					['br', () => [parseJson(zlib.brotliDecompressSync(buffer)), false, 'br']],
+					['br-eapi', () => parseEncrypted(zlib.brotliDecompressSync(buffer), 'br-eapi')],
+					['br-eapi-response', () => [parseJson(crypto.eapi.decryptResponse(zlib.brotliDecompressSync(buffer))), true, 'br-eapi-response']],
+					['eapi-response', () => [parseJson(crypto.eapi.decryptResponse(buffer)), true, 'eapi-response']],
+					['eapi', () => parseEncrypted(buffer, 'eapi')],
 				]
 				for (const [mode, parser] of candidates) {
 					try {
-						const [jsonBody, encrypted] = parser()
+						const [jsonBody, encrypted, detail] = parser()
 						netease.jsonBody = jsonBody
 						netease.encrypted = encrypted
-						netease.parseMode = mode
+						netease.parseMode = detail || mode
 						return true
 					}
 					catch(e) {}
@@ -173,7 +198,13 @@ hook.request.after = ctx => {
 				return false
 			}
 			if (!parseBody()) {
-				console.log('[UNM] parse failed:', netease.path, 'len:', buffer.length, 'enc:', proxyRes.headers && proxyRes.headers['content-encoding'], 'head:', buffer.slice(0, 8).toString('hex'))
+				let brInfo = 'n/a'
+				try {
+					const br = zlib.brotliDecompressSync(buffer)
+					brInfo = `len=${br.length} head=${br.slice(0, 16).toString('hex')} text=${JSON.stringify(br.toString().slice(0, 80))}`
+				}
+				catch (e) {}
+				console.log('[UNM] parse failed:', netease.path, 'len:', buffer.length, 'enc:', proxyRes.headers && proxyRes.headers['content-encoding'], 'head:', buffer.slice(0, 16).toString('hex'), 'br:', brInfo)
 				return
 			}
 			console.log('[UNM] parsed:', netease.path, 'mode:', netease.parseMode, 'code:', netease.jsonBody.code, 'data:', Array.isArray(netease.jsonBody.data) ? netease.jsonBody.data.length : typeof(netease.jsonBody.data))
@@ -257,7 +288,7 @@ hook.request.after = ctx => {
 
 			let body = JSON.stringify(netease.jsonBody, inject)
 			body = body.replace(/([^\\]"\s*:\s*)"(\d{16,})L"(\s*[}|,])/g, '$1$2$3') // for js precision
-			proxyRes.body = (netease.encrypted ? crypto.eapi.encrypt(Buffer.from(body)) : body)
+			proxyRes.body = ((netease.encrypted || netease.e_r) ? crypto.eapi.encrypt(Buffer.from(body)) : body)
 		})
 		.catch(error => error ? console.log(error, req.url) : null)
 	}
@@ -304,16 +335,61 @@ hook.negotiate.before = ctx => {
 
 const pretendPlay = ctx => {
 	const {req, netease} = ctx
-	const turn = 'http://music.163.com/api/song/enhance/player/url'
+	const v1 = netease.path === '/api/song/enhance/download/url/v1'
+	const turn = `http://music.163.com/api/song/enhance/player/url${v1 ? '/v1' : ''}`
+	const normalizeIds = value => {
+		if (typeof(value) === 'string' && value.trim()) {
+			const text = value.trim()
+			if (/^\[.*\]$/.test(text)) return text
+			if (/^\d+$/.test(text)) return `[${text}]`
+			return JSON.stringify([text])
+		}
+		if (Array.isArray(value)) return JSON.stringify(value.map(item => {
+			const text = item != null ? item.toString() : ''
+			return /^\d+$/.test(text) ? Number(text) : text
+		}))
+		if (value != null) {
+			const text = value.toString()
+			return /^\d+$/.test(text) ? `[${text}]` : JSON.stringify([text])
+		}
+		return '[]'
+	}
 	let query = null
 	if (netease.forward) {
-		const {id, br} = netease.param
-		netease.param = {ids: `["${id}"]`, br}
+		if (v1) {
+			const {id, ids, level, immerseType, encodeType, trialMode} = netease.param
+			netease.param = {
+				ids: normalizeIds(ids || id),
+				level: level || 'exhigh',
+				encodeType: encodeType || 'mp3',
+				immerseType,
+				trialMode,
+				e_r: false
+			}
+		}
+		else {
+			const {id, br} = netease.param
+			netease.param = {ids: normalizeIds(id), br, e_r: false}
+		}
 		query = crypto.linuxapi.encryptRequest(turn, netease.param)
 	}
 	else {
-		const {id, br, e_r, header} = netease.param
-		netease.param = {ids: `["${id}"]`, br, e_r, header}
+		if (v1) {
+			const {id, ids, level, immerseType, encodeType, trialMode, header} = netease.param
+			netease.param = {
+				ids: normalizeIds(ids || id),
+				level: level || 'exhigh',
+				encodeType: encodeType || 'mp3',
+				immerseType,
+				trialMode,
+				e_r: false,
+				header
+			}
+		}
+		else {
+			const {id, br, header} = netease.param
+			netease.param = {ids: normalizeIds(id), br, e_r: false, header}
+		}
 		query = crypto.eapi.encryptRequest(turn, netease.param)
 	}
 	req.url = query.url

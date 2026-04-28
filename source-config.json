@@ -1,12 +1,12 @@
 {
   "enabled": {
-    "QQMusicClient": true,
+    "QQMusicClient": false,
     "KugouMusicClient": false,
-    "KuwoMusicClient": true,
-    "MiguMusicClient": true,
+    "KuwoMusicClient": false,
+    "MiguMusicClient": false,
     "PyncmdMusicClient": true,
-    "TuneHubMusicClient": true,
-    "JBSouMusicClient": true
+    "TuneHubMusicClient": false,
+    "JBSouMusicClient": false
   },
   "order": [
     "KugouMusicClient",
