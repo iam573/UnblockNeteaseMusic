@@ -18,7 +18,7 @@ const shouldLogHost = host => host && (
 const proxy = {
 	core: {
 		mitm: (req, res) => {
-			if (req.url.startsWith('/__unm/')) {
+			if (req.url === '/console' || req.url.startsWith('/console?') || req.url.startsWith('/__unm/')) {
 				return Promise.resolve(manage.handle(req, res)).catch(() => {})
 			}
 			if (req.url == '/proxy.pac') {
